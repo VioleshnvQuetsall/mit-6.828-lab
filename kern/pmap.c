@@ -138,8 +138,10 @@ mem_init(void)
 
 	//////////////////////////////////////////////////////////////////////
 	// create initial page directory.
-    extern char end[];
+    extern char end[], edata[];
+    cprintf("edata %p\n", edata);
     cprintf("&kern_pgdir %p\n", &kern_pgdir);
+    cprintf("&pages %p\n", &pages);
     cprintf("end %p\n", end);
 	kern_pgdir = (pde_t *) boot_alloc(PGSIZE);
 	memset(kern_pgdir, 0, PGSIZE);
@@ -466,7 +468,7 @@ page_insert(pde_t *pgdir, struct PageInfo *pp, void *va, int perm)
 // can be used to verify page permissions for syscall arguments,
 // but should not be used by most callers.
 //
-// Return NULL if there is no page mapped at va.
+// Return NULL if there is no page mapped at va.PGOFF((uintptr_t)pte_p) & perm
 //
 // Hint: the TA solution uses pgdir_walk and pa2page.
 //
@@ -475,8 +477,8 @@ page_lookup(pde_t *pgdir, void *va, pte_t **pte_store)
 {
 	// Fill this function in
     pte_t *pte_p = pgdir_walk(pgdir, va, 0);
-	if (pte_p == NULL || !(*pte_p & PTE_P)) return NULL;
 	if (pte_store != NULL) *pte_store = pte_p;
+	if (pte_p == NULL || !(*pte_p & PTE_P)) return NULL;
     return pa2page(PTE_ADDR(*pte_p));
 }
 
@@ -544,7 +546,24 @@ int
 user_mem_check(struct Env *env, const void *va, size_t len, int perm)
 {
 	// LAB 3: Your code here.
+	uintptr_t va_i = (uintptr_t)va;
+	uintptr_t va_end = ROUNDUP(va_i + len, PGSIZE);
+	
+	if (va_end >= ULIM) {
+		user_mem_check_addr = MAX(va_i, ULIM);
+		return -E_FAULT;
+	}
 
+	pte_t *pte_p;
+	perm |= PTE_P;
+
+	for (va_i = ROUNDDOWN(va_i, PGSIZE); va_i != va_end; va_i += PGSIZE) {
+		pte_p = pgdir_walk(env->env_pgdir, (void *)va_i, 0);
+		if (pte_p == NULL || (*pte_p & perm) != perm) {
+			user_mem_check_addr = MAX(va_i, (uintptr_t)va);
+			return -E_FAULT;
+		}
+	}
 	return 0;
 }
 
