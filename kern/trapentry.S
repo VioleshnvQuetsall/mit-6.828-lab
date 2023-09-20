@@ -49,8 +49,60 @@
  */
 
 
+#define T(n) \
+.data;                          \
+	.long handler##n;          \
+.text;                          \
+	TRAPHANDLER(handler##n, n)
+
+#define T_NOEC(n) \
+.data;                          \
+	.long handler##n;          \
+.text;                          \
+	TRAPHANDLER_NOEC(handler##n, n)
+
+#define T_OCCU(n) \
+.data;           \
+	.long 0;
+
+.data
+	.global handler_entry
+
+handler_entry:
+.text
+ 	T_NOEC(0)
+	T_NOEC(1)
+	T_OCCU(2)
+	T_NOEC(3)
+	T_NOEC(4)
+	T_NOEC(5)
+	T_NOEC(6)
+	T_NOEC(7)
+	T(8)
+	T_NOEC(9)
+	T(10)
+	T(11)
+	T(12)
+	T(13)
+	T(14)
+	T_OCCU(15)
+	T_NOEC(16)
+
+	TRAPHANDLER_NOEC(handler_syscall, T_SYSCALL)
+	TRAPHANDLER_NOEC(handler_default, T_DEFAULT)
 
 /*
  * Lab 3: Your code here for _alltraps
  */
 
+_alltraps:
+	pushl %ds;
+	pushl %es;
+	pushal;
+
+	movw $GD_KD, %ax;
+	movw %ax, %ds;
+	movw %ax, %es;
+
+	pushl %esp;
+	call trap;
