@@ -190,14 +190,15 @@ env_setup_vm(struct Env *e)
 	// LAB 3: Your code here.
 	p->pp_ref++;
 	e->env_pgdir = (pde_t *)page2kva(p);
+
+	// memcpy(e->env_pgdir, kern_pgdir, PGSIZE);
+
 	memcpy(e->env_pgdir + PDX(UTOP), kern_pgdir + PDX(UTOP),
-	       PGSIZE - PDX(UTOP));
+	       PGSIZE - PDX(UTOP) * sizeof(pde_t));
 
 	// UVPT maps the env's own page table read-only.
 	// Permissions: kernel R, user R
 	e->env_pgdir[PDX(UVPT)] = PADDR(e->env_pgdir) | PTE_P | PTE_U;
-
-	cprintf("env_set_vm()\n");
 
 	return 0;
 }
@@ -259,6 +260,7 @@ env_alloc(struct Env **newenv_store, envid_t parent_id)
 
 	// Enable interrupts while in user mode.
 	// LAB 4: Your code here.
+	e->env_tf.tf_eflags |= FL_IF;
 
 	// Clear the page fault handler until user installs one.
 	e->env_pgfault_upcall = 0;
@@ -298,7 +300,7 @@ region_alloc(struct Env *e, void *va, size_t len)
 		page_insert(e->env_pgdir, pp, va, PTE_U | PTE_W | PTE_P);
 	}
 
-	cprintf("region_alloc(%p, %p, %d)\n", e, va, len);
+	// cprintf("region_alloc(%p, %p, %d)\n", e, va, len);
 }
 
 //
@@ -370,7 +372,7 @@ load_icode(struct Env *e, uint8_t *binary)
 		// map and copy
 		if (ph->p_type != ELF_PROG_LOAD) continue;
 		region_alloc(e, (void *)ph->p_va, ph->p_memsz);
-		cprintf("load ph %p\n", ph);
+		// cprintf("load ph %p\n", ph);
 		memcpy((void *)ph->p_va, binary + ph->p_offset, ph->p_filesz);
 		memset((void *)ph->p_va + ph->p_filesz, 0, ph->p_memsz - ph->p_filesz);
 	}
@@ -378,7 +380,7 @@ load_icode(struct Env *e, uint8_t *binary)
 
 	// set eip to the entry point from the ELF header
 	e->env_tf.tf_eip = elf->e_entry;
-	cprintf("entry %p\n", elf->e_entry);
+	// cprintf("entry %p\n", elf->e_entry);
 
 	// Now map one page for the program's initial stack
 	// at virtual address USTACKTOP - PGSIZE.
@@ -386,7 +388,7 @@ load_icode(struct Env *e, uint8_t *binary)
 	// LAB 3: Your code here.
 	region_alloc(e, (void *)(USTACKTOP - PGSIZE), PGSIZE);
 
-	cprintf("load_icode()\n");
+	// cprintf("load_icode()\n");
 }
 
 //
@@ -408,7 +410,7 @@ env_create(uint8_t *binary, enum EnvType type)
 	load_icode(e, binary);
 	e->env_type = type;
 
-	cprintf("env_create()\n");
+	// cprintf("env_create()\n");
 }
 
 //
@@ -546,6 +548,8 @@ env_run(struct Env *e)
 	e->env_status = ENV_RUNNING;
 	e->env_runs++;
 	lcr3(PADDR(e->env_pgdir));
+
+	unlock_kernel();
 	env_pop_tf(&e->env_tf);
 }
 

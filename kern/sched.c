@@ -6,6 +6,7 @@
 #include <kern/monitor.h>
 
 void sched_halt(void);
+void try_run();
 
 // Choose a user environment to run and run it.
 void
@@ -29,6 +30,17 @@ sched_yield(void)
 	// below to halt the cpu.
 
 	// LAB 4: Your code here.
+	size_t curenv_idx = curenv == NULL ? NENV - 1 : curenv - envs;
+	size_t count = NENV;
+
+	for (size_t i = (curenv_idx + 1) % NENV; count--; i = (i + 1) % NENV) {
+		if (envs[i].env_status != ENV_RUNNABLE) continue;
+		env_run(envs + i);
+	}
+
+	if (curenv != NULL && curenv->env_status == ENV_RUNNING) {
+		env_run(curenv);
+	}
 
 	// sched_halt never returns
 	sched_halt();
@@ -75,7 +87,7 @@ sched_halt(void)
 		"pushl $0\n"
 		"pushl $0\n"
 		// Uncomment the following line after completing exercise 13
-		//"sti\n"
+		"sti\n"
 		"1:\n"
 		"hlt\n"
 		"jmp 1b\n"

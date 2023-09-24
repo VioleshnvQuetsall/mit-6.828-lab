@@ -11,6 +11,8 @@
 // Custom page fault handler - if faulting page is copy-on-write,
 // map in our own private writable copy.
 //
+extern volatile pte_t uvpt[];
+extern volatile pde_t uvpd[];
 static void
 pgfault(struct UTrapframe *utf)
 {
@@ -25,6 +27,11 @@ pgfault(struct UTrapframe *utf)
 	//   (see <inc/memlayout.h>).
 
 	// LAB 4: Your code here.
+	int perm =  PTE_COW | PTE_U | PTE_P;
+	if (!(err & FEC_WR && uvpd[PDX(addr)] & PTE_P &&
+	    (uvpt[PGNUM(addr)] & perm) == perm)) {
+		panic("pgfault: perm mismatch (err: %x, addr: %08x)\n", err, addr);
+	}
 
 	// Allocate a new page, map it at a temporary location (PFTEMP),
 	// copy the data from the old page to the new page, then move the new
@@ -33,8 +40,17 @@ pgfault(struct UTrapframe *utf)
 	//   You should make three system calls.
 
 	// LAB 4: Your code here.
-
-	panic("pgfault not implemented");
+	addr = ROUNDDOWN(addr, PGSIZE);
+	if (r = sys_page_alloc(0, PFTEMP, PTE_U | PTE_W | PTE_P), r < 0) {
+		panic("pgfault: sys_page_alloc failed (%e)\n", r);
+	}
+	memcpy(PFTEMP, addr, PGSIZE);
+	if (r = sys_page_map(0, PFTEMP, 0, addr, PTE_U | PTE_W | PTE_P), r < 0) {
+		panic("pgfault: sys_page_map failed (%e)\n", r);
+	}
+	if (r = sys_page_unmap(0, PFTEMP), r < 0) {
+		panic("pgfault: sys_page_unmap failed (%e)\n", r);
+	}
 }
 
 //
@@ -51,10 +67,25 @@ pgfault(struct UTrapframe *utf)
 static int
 duppage(envid_t envid, unsigned pn)
 {
-	int r;
+	int r = 0;
 
 	// LAB 4: Your code here.
-	panic("duppage not implemented");
+	void *va = (void *)(pn * PGSIZE);
+	int perm = PTE_U | PTE_P;
+
+	if (uvpt[pn] & (PTE_W | PTE_COW)) {
+		perm |= PTE_COW;
+		if (r = sys_page_map(0, va, envid, va, perm), r < 0) {
+			panic("duppage: sys_page_map failed (new mapping %e)\n", r);
+		}
+		if (r = sys_page_map(0, va, 0, va, perm), r < 0) {
+			panic("duppage: sys_page_map failed (our mapping %e)\n", r);
+		}
+	} else {
+		if (r = sys_page_map(0, va, envid, va, perm), r < 0) {
+			panic("duppage: sys_page_map failed (new mapping %e)\n", r);
+		}
+	}
 	return 0;
 }
 
@@ -78,7 +109,49 @@ envid_t
 fork(void)
 {
 	// LAB 4: Your code here.
-	panic("fork not implemented");
+	extern void _pgfault_upcall(void);
+
+	int r = 0;
+	envid_t parent_id = sys_getenvid();
+	set_pgfault_handler(pgfault);
+	if (r = sys_exofork(), r < 0) {
+		panic("[parent env %d] "
+		      "fork: sys_exofork (%e)\n", parent_id, r);
+	}
+
+	envid_t child_id = r;
+	if (child_id == 0) {
+		thisenv = envs + ENVX(sys_getenvid());
+		return 0;
+	}
+
+	// copy address space
+	for (size_t ptn = 0; ptn < UTOP / PTSIZE; ptn++) {
+		if (!(uvpd[ptn] & PTE_P)) continue;
+		size_t lim = MIN((ptn + 1) * NPTENTRIES, USTACKTOP / PGSIZE);
+		for (size_t pn = ptn * NPTENTRIES; pn < lim; pn++) {
+			if (!(uvpt[pn] & PTE_P && uvpt[pn] & PTE_U)) continue;
+			duppage(child_id, pn);
+		}
+	}
+
+	// alloc exception stack and set page fault upcall
+	if (r = sys_page_alloc(child_id, (void *)(UXSTACKTOP - PGSIZE), PTE_W | PTE_U | PTE_P),
+		r < 0) {
+		panic("[parent env %d] "
+		      "fork: sys_page_alloc (%e)\n", parent_id, r);
+	}
+	if (r = sys_env_set_pgfault_upcall(child_id, (void *)_pgfault_upcall), r < 0) {
+		panic("[parent_id env %d] fork: sys_env_set_pgfault_upcall "
+		      "for child (%e)\n",
+				parent_id, r);
+	}
+	if (r = sys_env_set_status(child_id, ENV_RUNNABLE), r < 0) {
+		panic("[parent env %d] "
+		      "fork: sys_env_set_status (%e)\n", parent_id, r);
+	}
+
+	return child_id;
 }
 
 // Challenge!

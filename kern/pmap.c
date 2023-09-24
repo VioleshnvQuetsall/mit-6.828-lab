@@ -283,7 +283,11 @@ mem_init_mp(void)
 	//     Permissions: kernel RW, user NONE
 	//
 	// LAB 4: Your code here:
-
+	for (size_t i = 0; i < NCPU; i++) {
+		uintptr_t kstactop_i = KSTACKTOP - i * (KSTKSIZE + KSTKGAP);
+		boot_map_region(kern_pgdir, kstactop_i - KSTKSIZE, KSTKSIZE,
+						PADDR(percpu_kstacks[i]), PTE_W | PTE_P);
+	}
 }
 
 // --------------------------------------------------------------
@@ -323,9 +327,13 @@ page_init(void)
 	// NB: DO NOT actually touch the physical memory corresponding to
 	// free pages!
 	size_t i;
+	extern unsigned char mpentry_start[], mpentry_end[];
+	size_t lo1 = IOPHYSMEM / PGSIZE;
+	size_t hi1 = PADDR(boot_alloc(0)) / PGSIZE;
+	size_t lo2 = MPENTRY_PADDR / PGSIZE;
+	size_t hi2 = ROUNDUP(mpentry_end - mpentry_start, PGSIZE) / PGSIZE + lo2;
 	for (i = 0; i < npages; i++) {
-		if (i == 0 ||
-	        (IOPHYSMEM / PGSIZE <= i && i < PADDR(boot_alloc(0)) / PGSIZE)) {
+		if (i == 0 || (lo1 <= i && i < hi1) || (lo2 <= i && i < hi2)) {
             pages[i].pp_ref = 1;
 			pages[i].pp_link = NULL;
         } else {
@@ -374,7 +382,8 @@ page_free(struct PageInfo *pp)
 	// Hint: You may want to panic if pp->pp_ref is nonzero or
 	// pp->pp_link is not NULL.
     if (pp->pp_ref != 0 || pp->pp_link != NULL) {
-		panic("page_free: pp_ref is not 0 or pp_link is not NULL");
+		panic("page_free: pp_ref is %d and pp_link is %p",
+		       pp->pp_ref, pp->pp_link);
 	}
     pp->pp_link = page_free_list;
 	page_free_list = pp;
@@ -588,7 +597,16 @@ mmio_map_region(physaddr_t pa, size_t size)
 	// Hint: The staff solution uses boot_map_region.
 	//
 	// Your code here:
-	panic("mmio_map_region not implemented");
+
+	uintptr_t result = base;
+	size = ROUNDUP(size, PGSIZE);
+	if (base + size >= MMIOLIM) {
+		panic("mmio_map_region: overflow MMIOLIM");
+	}
+	boot_map_region(kern_pgdir, base, size, pa, PTE_PCD | PTE_PWT | PTE_W);
+	base += size;
+
+	return (void *)result;
 }
 
 static uintptr_t user_mem_check_addr;
