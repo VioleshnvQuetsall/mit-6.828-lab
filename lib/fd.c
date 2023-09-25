@@ -16,6 +16,9 @@
 #define INDEX2DATA(i)	((char*) (FILEDATA + (i)*PGSIZE))
 
 
+extern volatile pte_t uvpt[];
+extern volatile pde_t uvpd[];
+
 // --------------------------------------------------------------
 // File descriptor manipulators
 // --------------------------------------------------------------

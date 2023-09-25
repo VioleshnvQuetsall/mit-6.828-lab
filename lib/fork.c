@@ -73,7 +73,11 @@ duppage(envid_t envid, unsigned pn)
 	void *va = (void *)(pn * PGSIZE);
 	int perm = PTE_U | PTE_P;
 
-	if (uvpt[pn] & (PTE_W | PTE_COW)) {
+	if (uvpt[pn] & PTE_SHARE) {
+		if (r = sys_page_map(0, va, envid, va, uvpt[pn] & PTE_SYSCALL), r < 0) {
+			panic("duppage: sys_page_map failed (share mapping %e)", r);
+		}
+	} else if (uvpt[pn] & (PTE_W | PTE_COW)) {
 		perm |= PTE_COW;
 		if (r = sys_page_map(0, va, envid, va, perm), r < 0) {
 			panic("duppage: sys_page_map failed (new mapping %e)\n", r);

@@ -272,7 +272,7 @@ env_alloc(struct Env **newenv_store, envid_t parent_id)
 	env_free_list = e->env_link;
 	*newenv_store = e;
 
-	// cprintf("[%08x] new env %08x\n", curenv ? curenv->env_id : 0, e->env_id);
+	cprintf("[%08x] new env %08x\n", curenv ? curenv->env_id : 0, e->env_id);
 	return 0;
 }
 
@@ -295,7 +295,7 @@ region_alloc(struct Env *e, void *va, size_t len)
 	//   (Watch out for corner-cases!)
 	void *va_end = ROUNDUP(va + len, PGSIZE);
 	for (va = ROUNDDOWN(va, PGSIZE); va != va_end; va += PGSIZE) {
-		struct PageInfo *pp = page_alloc(0);
+		struct PageInfo *pp = page_alloc(ALLOC_ZERO);
 		if (pp == NULL) panic("region_alloc: page_alloc failed");
 		page_insert(e->env_pgdir, pp, va, PTE_U | PTE_W | PTE_P);
 	}
@@ -414,6 +414,9 @@ env_create(uint8_t *binary, enum EnvType type)
 
 	// If this is the file server (type == ENV_TYPE_FS) give it I/O privileges.
 	// LAB 5: Your code here.
+	if (type == ENV_TYPE_FS) {
+		e->env_tf.tf_eflags = (e->env_tf.tf_eflags & ~FL_IOPL_MASK) | FL_IOPL_3;
+	}
 }
 
 //

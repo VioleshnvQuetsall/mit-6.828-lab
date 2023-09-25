@@ -133,7 +133,22 @@ sys_env_set_trapframe(envid_t envid, struct Trapframe *tf)
 	// LAB 5: Your code here.
 	// Remember to check whether the user has supplied us with a good
 	// address!
-	panic("sys_env_set_trapframe not implemented");
+	struct Env *env;
+	int r;
+
+	if (r = envid2env(envid, &env, 1), r < 0) return r;
+
+	// to keep original tf unchanged
+	env->env_tf = *tf;
+	tf = &env->env_tf;
+
+	tf->tf_ds = GD_UD | 3;
+	tf->tf_es = GD_UD | 3;
+	tf->tf_ss = GD_UD | 3;
+	tf->tf_cs = GD_UT | 3;
+	tf->tf_eflags = (tf->tf_eflags & ~FL_IOPL_MASK) | FL_IOPL_0 | FL_IF;
+
+	return 0;
 }
 
 // Set the page fault upcall for 'envid' by modifying the corresponding struct
@@ -193,7 +208,7 @@ sys_page_alloc(envid_t envid, void *va, int perm)
 	struct PageInfo *pp;
 
 	if (r = envid2env(envid, &env, 1), r < 0) return r;
-	if (pp = page_alloc(1), pp == NULL) return -E_NO_MEM;
+	if (pp = page_alloc(ALLOC_ZERO), pp == NULL) return -E_NO_MEM;
 	if (r = page_insert(env->env_pgdir, pp, va, perm), r < 0) {
 		page_free(pp);
 		return r;
@@ -330,10 +345,8 @@ sys_ipc_try_send(envid_t envid, uint32_t value, void *srcva, unsigned perm)
 		if (srcva != ROUNDDOWN(srcva, PGSIZE)                     ||
 			(perm | PTE_SYSCALL) != PTE_SYSCALL                   ||
 	    	(perm & (PTE_U | PTE_P)) != (PTE_U | PTE_P)) return -E_INVAL;
-		if (pp = page_lookup(curenv->env_pgdir, srcva, &pte_p), pp == NULL) {
-			return -E_INVAL;
-		}
-		if (perm & PTE_W && !(*pte_p & PTE_W)) return -E_INVAL;
+		pp = page_lookup(curenv->env_pgdir, srcva, &pte_p);
+		if (pp == NULL || (perm & PTE_W && !(*pte_p & PTE_W))) return -E_INVAL;
 
 		if (env->env_ipc_dstva < (void*)UTOP) {
 			page_insert(env->env_pgdir, pp, env->env_ipc_dstva, perm);
@@ -422,6 +435,9 @@ syscall(uint32_t syscallno, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, 
 		return sys_ipc_try_send((envid_t)a1, (uint32_t)a2, (void *)a3, (unsigned int)a4);
 	case SYS_ipc_recv:
  		return sys_ipc_recv((void *)a1);
+
+	case SYS_env_set_trapframe:
+		return sys_env_set_trapframe((envid_t)a1, (struct Trapframe *)a2);
 
 	default:
 		panic("unsupported syscall %u", syscallno);

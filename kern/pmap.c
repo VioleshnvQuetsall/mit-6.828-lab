@@ -430,7 +430,7 @@ pgdir_walk(pde_t *pgdir, const void *va, int create)
 	// Fill this function in
     pde_t *pgt_p = pgdir + PDX(va);
 	if (!(*pgt_p & PTE_P) && create) {
-		struct PageInfo *pt_page = page_alloc(1);
+		struct PageInfo *pt_page = page_alloc(ALLOC_ZERO);
 		if (pt_page != NULL) {
 			pt_page->pp_ref++;
 			*pgt_p = page2pa(pt_page) | PTE_U | PTE_W | PTE_P;
